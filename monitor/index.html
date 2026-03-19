@@ -3,42 +3,45 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pi Monitor</title>
+<title>Pi NAS Monitor</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #0f172a;
-    color: #e2e8f0;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    overflow: hidden;
+    background: #f1f5f9;
+    color: #1e293b;
+    min-height: 100vh;
+    padding: 24px;
   }
-  .header {
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  .title {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 20px 32px;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .title svg {
+    width: 32px;
+    height: 32px;
     flex-shrink: 0;
   }
-  .header h1 {
-    font-size: 1.1rem;
-    color: #94a3b8;
-    font-weight: 500;
+  .title h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #0f172a;
   }
-  .live-temp {
-    font-size: 2rem;
-    font-weight: 700;
-    transition: color 0.3s;
-  }
-  .live-temp.cool { color: #22d3ee; }
-  .live-temp.warm { color: #facc15; }
-  .live-temp.hot { color: #ef4444; }
-  .status-row {
+  .status-bar {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
+    margin-bottom: 24px;
   }
   .dot {
     width: 8px;
@@ -48,62 +51,183 @@
   .dot.online { background: #22c55e; }
   .dot.offline { background: #ef4444; }
   .status-text {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: #64748b;
   }
-  .mem {
-    font-size: 0.85rem;
-    color: #64748b;
-    margin-left: 8px;
-    padding-left: 12px;
-    border-left: 1px solid #334155;
+
+  /* Live values */
+  .live {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
   }
-  .chart-container {
+  .live-card {
     flex: 1;
-    padding: 0 32px 24px 32px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .live-label {
+    font-size: 0.75rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+  .live-value {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+  .live-value.cool { color: #0891b2; }
+  .live-value.warm { color: #d97706; }
+  .live-value.hot { color: #dc2626; }
+  .live-value.mem { color: #0f172a; }
+
+  /* Stats row */
+  .stats {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .stat {
+    flex: 1;
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .stat-label {
+    font-size: 0.7rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+  }
+  .stat-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #334155;
+  }
+
+  /* Chart */
+  .chart-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .chart-title {
+    font-size: 0.75rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 12px;
+  }
+  .chart-wrap {
     position: relative;
-    min-height: 0;
+    width: 100%;
+    height: 280px;
   }
   canvas {
     width: 100%;
     height: 100%;
     display: block;
   }
+
+  @media (max-width: 480px) {
+    body { padding: 16px; }
+    .live { flex-direction: column; }
+    .live-value { font-size: 1.6rem; }
+    .stats { flex-wrap: wrap; }
+    .stat { min-width: calc(50% - 8px); }
+    .chart-wrap { height: 220px; }
+  }
 </style>
 </head>
 <body>
-<div class="header">
-  <div>
-    <h1>Pi NAS Temperature</h1>
-    <div class="status-row">
-      <span class="dot offline" id="dot"></span>
-      <span class="status-text" id="status">Waiting for Pi...</span>
-      <span class="mem" id="mem"></span>
+<div class="container">
+  <div class="title">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#c026d3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="5" y="2" width="14" height="20" rx="2"/>
+      <circle cx="9" cy="7" r="1" fill="#c026d3"/>
+      <circle cx="15" cy="7" r="1" fill="#c026d3"/>
+      <circle cx="9" cy="12" r="1" fill="#c026d3"/>
+      <circle cx="15" cy="12" r="1" fill="#c026d3"/>
+      <circle cx="9" cy="17" r="1" fill="#c026d3"/>
+      <circle cx="15" cy="17" r="1" fill="#c026d3"/>
+      <line x1="2" y1="7" x2="5" y2="7"/>
+      <line x1="2" y1="12" x2="5" y2="12"/>
+      <line x1="2" y1="17" x2="5" y2="17"/>
+      <line x1="19" y1="7" x2="22" y2="7"/>
+      <line x1="19" y1="12" x2="22" y2="12"/>
+      <line x1="19" y1="17" x2="22" y2="17"/>
+    </svg>
+    <h1>Raspberry Pi NAS Monitor</h1>
+  </div>
+  <div class="status-bar">
+    <span class="dot offline" id="dot"></span>
+    <span class="status-text" id="status">Waiting for Pi...</span>
+  </div>
+
+  <div class="live">
+    <div class="live-card">
+      <div class="live-label">Temperature</div>
+      <div class="live-value cool" id="temp">--°C</div>
+    </div>
+    <div class="live-card">
+      <div class="live-label">Memory</div>
+      <div class="live-value mem" id="mem">-- / -- MB</div>
     </div>
   </div>
-  <div class="live-temp" id="temp">--°C</div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Avg Temp</div>
+      <div class="stat-value" id="avg-temp">--</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Max Temp</div>
+      <div class="stat-value" id="max-temp">--</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Max RAM</div>
+      <div class="stat-value" id="max-ram">--</div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">Temperature Today</div>
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
 </div>
-<div class="chart-container">
-  <canvas id="chart"></canvas>
-</div>
+
 <script>
 const tempEl = document.getElementById("temp");
 const dotEl = document.getElementById("dot");
 const statusEl = document.getElementById("status");
 const memEl = document.getElementById("mem");
+const avgTempEl = document.getElementById("avg-temp");
+const maxTempEl = document.getElementById("max-temp");
+const maxRamEl = document.getElementById("max-ram");
 const canvas = document.getElementById("chart");
 const ctx = canvas.getContext("2d");
 
-const history = []; // {temp, timestamp}
+const history = [];
+let maxMemPct = 0;
 
-const AXIS_COLOR = "#334155";
-const LABEL_COLOR = "#64748b";
-const GRID_COLOR = "#1e293b";
-const LINE_COLOR = "#22d3ee";
-const FILL_TOP = "rgba(34, 211, 238, 0.15)";
-const FILL_BOT = "rgba(34, 211, 238, 0)";
+const GRID_COLOR = "#f1f5f9";
+const LABEL_COLOR = "#94a3b8";
+const LINE_COLOR = "#0891b2";
+const FILL_TOP = "rgba(8, 145, 178, 0.12)";
+const FILL_BOT = "rgba(8, 145, 178, 0)";
+const AXIS_COLOR = "#cbd5e1";
 
-const PADDING = { top: 20, right: 24, bottom: 44, left: 56 };
+const PADDING = { top: 16, right: 16, bottom: 36, left: 48 };
 
 function resize() {
   const rect = canvas.parentElement.getBoundingClientRect();
@@ -123,6 +247,20 @@ function formatTime(ts) {
   });
 }
 
+function updateStats() {
+  if (history.length === 0) return;
+  let sum = 0, max = -Infinity;
+  for (const p of history) {
+    sum += p.temp;
+    if (p.temp > max) max = p.temp;
+  }
+  avgTempEl.textContent = (sum / history.length).toFixed(1) + "°C";
+  maxTempEl.textContent = max.toFixed(1) + "°C";
+  if (maxMemPct > 0) {
+    maxRamEl.textContent = maxMemPct.toFixed(0) + "%";
+  }
+}
+
 function draw() {
   const dpr = devicePixelRatio;
   const w = canvas.width / dpr;
@@ -140,7 +278,6 @@ function draw() {
 
   if (plotW <= 0 || plotH <= 0) return;
 
-  // Determine temp range
   let minT = Infinity, maxT = -Infinity;
   for (const p of history) {
     if (p.temp < minT) minT = p.temp;
@@ -152,7 +289,6 @@ function draw() {
   maxT = Math.ceil(maxT + tempPad);
   const tempRange = maxT - minT || 1;
 
-  // Determine time range
   let tMin, tMax;
   if (history.length > 1) {
     tMin = history[0].timestamp;
@@ -170,8 +306,8 @@ function draw() {
   function xPos(ts) { return plotL + ((ts - tMin) / timeRange) * plotW; }
   function yPos(temp) { return plotB - ((temp - minT) / tempRange) * plotH; }
 
-  // Grid lines — temperature
-  ctx.font = "12px -apple-system, sans-serif";
+  // Grid — temperature
+  ctx.font = "11px -apple-system, sans-serif";
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
 
@@ -185,12 +321,11 @@ function draw() {
     ctx.moveTo(plotL, y);
     ctx.lineTo(plotR, y);
     ctx.stroke();
-
     ctx.fillStyle = LABEL_COLOR;
-    ctx.fillText(t + "°C", plotL - 8, y);
+    ctx.fillText(t + "°", plotL - 8, y);
   }
 
-  // Grid lines — time
+  // Grid — time
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
 
@@ -211,7 +346,6 @@ function draw() {
     ctx.moveTo(x, plotT);
     ctx.lineTo(x, plotB);
     ctx.stroke();
-
     ctx.fillStyle = LABEL_COLOR;
     ctx.fillText(formatTime(t), x, plotB + 8);
   }
@@ -227,24 +361,22 @@ function draw() {
 
   if (history.length < 1) return;
 
-  // Line + fill
+  // Line
   ctx.beginPath();
   for (let i = 0; i < history.length; i++) {
     const x = xPos(history[i].timestamp);
     const y = yPos(history[i].temp);
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   }
-
   ctx.strokeStyle = LINE_COLOR;
   ctx.lineWidth = 2;
   ctx.lineJoin = "round";
   ctx.stroke();
 
-  // Fill under the line
+  // Fill
   const grad = ctx.createLinearGradient(0, plotT, 0, plotB);
   grad.addColorStop(0, FILL_TOP);
   grad.addColorStop(1, FILL_BOT);
-
   ctx.lineTo(xPos(history[history.length - 1].timestamp), plotB);
   ctx.lineTo(xPos(history[0].timestamp), plotB);
   ctx.closePath();
@@ -266,9 +398,11 @@ function setStatus(online) {
 function updateTemp(data) {
   const t = parseFloat(data.temp);
   tempEl.textContent = t.toFixed(1) + "°C";
-  tempEl.className = "live-temp " + tempClass(t);
+  tempEl.className = "live-value " + tempClass(t);
   if (data.mem_used != null && data.mem_total != null) {
-    memEl.textContent = `RAM: ${data.mem_used} / ${data.mem_total} MB`;
+    memEl.textContent = `${data.mem_used} / ${data.mem_total} MB`;
+    const pct = (data.mem_used / data.mem_total) * 100;
+    if (pct > maxMemPct) maxMemPct = pct;
   }
 }
 
@@ -293,6 +427,7 @@ function connect() {
         const last = history[history.length - 1];
         updateTemp(last);
       }
+      updateStats();
       draw();
       return;
     }
@@ -301,6 +436,7 @@ function connect() {
     history.push(point);
     if (history.length > 720) history.shift();
     updateTemp(data);
+    updateStats();
     draw();
   };
 
