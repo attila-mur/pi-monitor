@@ -10,6 +10,7 @@ const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 
 const history = [];
 const browsers = new Set();
+let piConnected = false;
 
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
@@ -32,6 +33,11 @@ wss.on("connection", (ws, req) => {
       return;
     }
     console.log("Pi connected");
+    piConnected = true;
+    const statusMsg = JSON.stringify({ type: "status", piConnected: true });
+    for (const b of browsers) {
+      if (b.readyState === 1) b.send(statusMsg);
+    }
     ws.on("message", (data) => {
       try {
         const parsed = JSON.parse(data);
@@ -60,9 +66,17 @@ wss.on("connection", (ws, req) => {
         }
       } catch {}
     });
-    ws.on("close", () => console.log("Pi disconnected"));
+    ws.on("close", () => {
+      console.log("Pi disconnected");
+      piConnected = false;
+      const statusMsg = JSON.stringify({ type: "status", piConnected: false });
+      for (const b of browsers) {
+        if (b.readyState === 1) b.send(statusMsg);
+      }
+    });
   } else {
     browsers.add(ws);
+    ws.send(JSON.stringify({ type: "status", piConnected }));
     if (history.length > 0) {
       ws.send(JSON.stringify({ type: "history", data: history }));
     }

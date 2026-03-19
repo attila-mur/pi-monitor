@@ -54,7 +54,9 @@
   .mem {
     font-size: 0.85rem;
     color: #64748b;
-    margin-top: 4px;
+    margin-left: 8px;
+    padding-left: 12px;
+    border-left: 1px solid #334155;
   }
   .chart-container {
     flex: 1;
@@ -76,12 +78,10 @@
     <div class="status-row">
       <span class="dot offline" id="dot"></span>
       <span class="status-text" id="status">Waiting for Pi...</span>
+      <span class="mem" id="mem"></span>
     </div>
   </div>
-  <div style="text-align: right;">
-    <div class="live-temp" id="temp">--°C</div>
-    <div class="mem" id="mem"></div>
-  </div>
+  <div class="live-temp" id="temp">--°C</div>
 </div>
 <div class="chart-container">
   <canvas id="chart"></canvas>
@@ -95,7 +95,6 @@ const canvas = document.getElementById("chart");
 const ctx = canvas.getContext("2d");
 
 const history = []; // {temp, timestamp}
-let lastUpdate = 0;
 
 const AXIS_COLOR = "#334155";
 const LABEL_COLOR = "#64748b";
@@ -259,13 +258,15 @@ function tempClass(t) {
   return "hot";
 }
 
+function setStatus(online) {
+  dotEl.className = "dot " + (online ? "online" : "offline");
+  statusEl.textContent = online ? "Live" : "Pi offline";
+}
+
 function updateTemp(data) {
   const t = parseFloat(data.temp);
   tempEl.textContent = t.toFixed(1) + "°C";
   tempEl.className = "live-temp " + tempClass(t);
-  dotEl.className = "dot online";
-  statusEl.textContent = "Live";
-  lastUpdate = Date.now();
   if (data.mem_used != null && data.mem_total != null) {
     memEl.textContent = `RAM: ${data.mem_used} / ${data.mem_total} MB`;
   }
@@ -277,6 +278,11 @@ function connect() {
 
   ws.onmessage = (e) => {
     const data = JSON.parse(e.data);
+
+    if (data.type === "status") {
+      setStatus(data.piConnected);
+      return;
+    }
 
     if (data.type === "history") {
       history.length = 0;
@@ -304,13 +310,6 @@ function connect() {
     setTimeout(connect, 3000);
   };
 }
-
-setInterval(() => {
-  if (lastUpdate && Date.now() - lastUpdate > 15000) {
-    dotEl.className = "dot offline";
-    statusEl.textContent = "Pi offline";
-  }
-}, 5000);
 
 resize();
 connect();
