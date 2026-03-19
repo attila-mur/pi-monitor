@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pi NAS Monitor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .card {
+    background: #1e293b;
+    border-radius: 16px;
+    padding: 40px 60px;
+    text-align: center;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  }
+  h1 { font-size: 1.2rem; color: #94a3b8; margin-bottom: 24px; }
+  .temp {
+    font-size: 5rem;
+    font-weight: 700;
+    transition: color 0.3s;
+  }
+  .temp.cool { color: #22d3ee; }
+  .temp.warm { color: #facc15; }
+  .temp.hot { color: #ef4444; }
+  .status {
+    margin-top: 16px;
+    font-size: 0.9rem;
+    color: #64748b;
+  }
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .dot.online { background: #22c55e; }
+  .dot.offline { background: #ef4444; }
+  .history {
+    margin-top: 24px;
+    width: 100%;
+    height: 120px;
+  }
+  canvas { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Pi NAS Temperature</h1>
+  <div class="temp" id="temp">--°C</div>
+  <div class="status">
+    <span class="dot offline" id="dot"></span>
+    <span id="status">Waiting for Pi...</span>
+  </div>
+  <div class="history">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+<script>
+const tempEl = document.getElementById("temp");
+const dotEl = document.getElementById("dot");
+const statusEl = document.getElementById("status");
+const canvas = document.getElementById("chart");
+const ctx = canvas.getContext("2d");
+
+const history = [];
+const MAX_POINTS = 60;
+let lastUpdate = 0;
+
+function resize() {
+  canvas.width = canvas.offsetWidth * devicePixelRatio;
+  canvas.height = canvas.offsetHeight * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  drawChart();
+}
+window.addEventListener("resize", resize);
+
+function drawChart() {
+  const w = canvas.offsetWidth;
+  const h = canvas.offsetHeight;
+  ctx.clearRect(0, 0, w, h);
+  if (history.length < 2) return;
+
+  const min = Math.min(...history) - 2;
+  const max = Math.max(...history) + 2;
+  const range = max - min || 1;
+
+  ctx.beginPath();
+  ctx.strokeStyle = "#22d3ee";
+  ctx.lineWidth = 2;
+  history.forEach((t, i) => {
+    const x = (i / (MAX_POINTS - 1)) * w;
+    const y = h - ((t - min) / range) * h;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function tempClass(t) {
+  if (t < 60) return "cool";
+  if (t < 75) return "warm";
+  return "hot";
+}
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}?role=browser`);
+
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    const t = parseFloat(data.temp);
+    tempEl.textContent = t.toFixed(1) + "°C";
+    tempEl.className = "temp " + tempClass(t);
+    dotEl.className = "dot online";
+    statusEl.textContent = "Live";
+    lastUpdate = Date.now();
+
+    history.push(t);
+    if (history.length > MAX_POINTS) history.shift();
+    drawChart();
+  };
+
+  ws.onclose = () => {
+    dotEl.className = "dot offline";
+    statusEl.textContent = "Reconnecting...";
+    setTimeout(connect, 3000);
+  };
+}
+
+setInterval(() => {
+  if (lastUpdate && Date.now() - lastUpdate > 15000) {
+    dotEl.className = "dot offline";
+    statusEl.textContent = "Pi offline";
+  }
+}, 5000);
+
+resize();
+connect();
+</script>
+</body>
+</html>

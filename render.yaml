@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: pi-monitor
+    runtime: node
+    rootDir: monitor
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PI_SECRET
+        generateValue: true
