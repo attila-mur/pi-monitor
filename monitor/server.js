@@ -8,7 +8,7 @@ const PI_SECRET = process.env.PI_SECRET || "changeme";
 
 const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 
-let latest = { temp: null, timestamp: null };
+const history = [];
 const browsers = new Set();
 
 const server = http.createServer((req, res) => {
@@ -34,17 +34,38 @@ wss.on("connection", (ws, req) => {
     console.log("Pi connected");
     ws.on("message", (data) => {
       try {
-        latest = JSON.parse(data);
-        latest.timestamp = Date.now();
+        const parsed = JSON.parse(data);
+
+        // Pi sends full history on connect
+        if (parsed.type === "history") {
+          history.length = 0;
+          for (const p of parsed.data) {
+            history.push({ temp: p.temp, timestamp: p.timestamp });
+          }
+          console.log(`Received history: ${history.length} readings`);
+          // Push history to all connected browsers
+          const msg = JSON.stringify({ type: "history", data: history });
+          for (const b of browsers) {
+            if (b.readyState === 1) b.send(msg);
+          }
+          return;
+        }
+
+        // Individual reading
+        const point = { temp: parsed.temp, timestamp: parsed.timestamp };
+        history.push(point);
+        const msg = JSON.stringify(point);
         for (const b of browsers) {
-          if (b.readyState === 1) b.send(JSON.stringify(latest));
+          if (b.readyState === 1) b.send(msg);
         }
       } catch {}
     });
     ws.on("close", () => console.log("Pi disconnected"));
   } else {
     browsers.add(ws);
-    if (latest.temp !== null) ws.send(JSON.stringify(latest));
+    if (history.length > 0) {
+      ws.send(JSON.stringify({ type: "history", data: history }));
+    }
     ws.on("close", () => browsers.delete(ws));
   }
 });

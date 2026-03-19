@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pi NAS Monitor</title>
+<title>Pi Monitor</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -11,99 +11,246 @@
     background: #0f172a;
     color: #e2e8f0;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    min-height: 100vh;
+    padding: 20px 32px;
+    flex-shrink: 0;
   }
-  .card {
-    background: #1e293b;
-    border-radius: 16px;
-    padding: 40px 60px;
-    text-align: center;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  .header h1 {
+    font-size: 1.1rem;
+    color: #94a3b8;
+    font-weight: 500;
   }
-  h1 { font-size: 1.2rem; color: #94a3b8; margin-bottom: 24px; }
-  .temp {
-    font-size: 5rem;
+  .live-temp {
+    font-size: 2rem;
     font-weight: 700;
     transition: color 0.3s;
   }
-  .temp.cool { color: #22d3ee; }
-  .temp.warm { color: #facc15; }
-  .temp.hot { color: #ef4444; }
-  .status {
-    margin-top: 16px;
-    font-size: 0.9rem;
-    color: #64748b;
+  .live-temp.cool { color: #22d3ee; }
+  .live-temp.warm { color: #facc15; }
+  .live-temp.hot { color: #ef4444; }
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   .dot {
-    display: inline-block;
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    margin-right: 6px;
-    vertical-align: middle;
   }
   .dot.online { background: #22c55e; }
   .dot.offline { background: #ef4444; }
-  .history {
-    margin-top: 24px;
-    width: 100%;
-    height: 120px;
+  .status-text {
+    font-size: 0.85rem;
+    color: #64748b;
   }
-  canvas { width: 100%; height: 100%; }
+  .mem {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-top: 4px;
+  }
+  .chart-container {
+    flex: 1;
+    padding: 0 32px 24px 32px;
+    position: relative;
+    min-height: 0;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>Pi NAS Temperature</h1>
-  <div class="temp" id="temp">--°C</div>
-  <div class="status">
-    <span class="dot offline" id="dot"></span>
-    <span id="status">Waiting for Pi...</span>
+<div class="header">
+  <div>
+    <h1>Pi NAS Temperature</h1>
+    <div class="status-row">
+      <span class="dot offline" id="dot"></span>
+      <span class="status-text" id="status">Waiting for Pi...</span>
+    </div>
   </div>
-  <div class="history">
-    <canvas id="chart"></canvas>
+  <div style="text-align: right;">
+    <div class="live-temp" id="temp">--°C</div>
+    <div class="mem" id="mem"></div>
   </div>
+</div>
+<div class="chart-container">
+  <canvas id="chart"></canvas>
 </div>
 <script>
 const tempEl = document.getElementById("temp");
 const dotEl = document.getElementById("dot");
 const statusEl = document.getElementById("status");
+const memEl = document.getElementById("mem");
 const canvas = document.getElementById("chart");
 const ctx = canvas.getContext("2d");
 
-const history = [];
-const MAX_POINTS = 60;
+const history = []; // {temp, timestamp}
 let lastUpdate = 0;
 
+const AXIS_COLOR = "#334155";
+const LABEL_COLOR = "#64748b";
+const GRID_COLOR = "#1e293b";
+const LINE_COLOR = "#22d3ee";
+const FILL_TOP = "rgba(34, 211, 238, 0.15)";
+const FILL_BOT = "rgba(34, 211, 238, 0)";
+
+const PADDING = { top: 20, right: 24, bottom: 44, left: 56 };
+
 function resize() {
-  canvas.width = canvas.offsetWidth * devicePixelRatio;
-  canvas.height = canvas.offsetHeight * devicePixelRatio;
-  ctx.scale(devicePixelRatio, devicePixelRatio);
-  drawChart();
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * devicePixelRatio;
+  canvas.height = rect.height * devicePixelRatio;
+  canvas.style.width = rect.width + "px";
+  canvas.style.height = rect.height + "px";
+  draw();
 }
 window.addEventListener("resize", resize);
 
-function drawChart() {
-  const w = canvas.offsetWidth;
-  const h = canvas.offsetHeight;
-  ctx.clearRect(0, 0, w, h);
-  if (history.length < 2) return;
-
-  const min = Math.min(...history) - 2;
-  const max = Math.max(...history) + 2;
-  const range = max - min || 1;
-
-  ctx.beginPath();
-  ctx.strokeStyle = "#22d3ee";
-  ctx.lineWidth = 2;
-  history.forEach((t, i) => {
-    const x = (i / (MAX_POINTS - 1)) * w;
-    const y = h - ((t - min) / range) * h;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString("en-GB", {
+    timeZone: "Europe/Budapest",
+    hour: "2-digit",
+    minute: "2-digit"
   });
+}
+
+function draw() {
+  const dpr = devicePixelRatio;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const plotL = PADDING.left;
+  const plotR = w - PADDING.right;
+  const plotT = PADDING.top;
+  const plotB = h - PADDING.bottom;
+  const plotW = plotR - plotL;
+  const plotH = plotB - plotT;
+
+  if (plotW <= 0 || plotH <= 0) return;
+
+  // Determine temp range
+  let minT = Infinity, maxT = -Infinity;
+  for (const p of history) {
+    if (p.temp < minT) minT = p.temp;
+    if (p.temp > maxT) maxT = p.temp;
+  }
+  if (history.length === 0) { minT = 30; maxT = 70; }
+  const tempPad = Math.max((maxT - minT) * 0.15, 3);
+  minT = Math.floor(minT - tempPad);
+  maxT = Math.ceil(maxT + tempPad);
+  const tempRange = maxT - minT || 1;
+
+  // Determine time range
+  let tMin, tMax;
+  if (history.length > 1) {
+    tMin = history[0].timestamp;
+    tMax = history[history.length - 1].timestamp;
+  } else if (history.length === 1) {
+    tMin = history[0].timestamp - 60000;
+    tMax = history[0].timestamp + 60000;
+  } else {
+    const now = Date.now();
+    tMin = now - 300000;
+    tMax = now;
+  }
+  const timeRange = tMax - tMin || 1;
+
+  function xPos(ts) { return plotL + ((ts - tMin) / timeRange) * plotW; }
+  function yPos(temp) { return plotB - ((temp - minT) / tempRange) * plotH; }
+
+  // Grid lines — temperature
+  ctx.font = "12px -apple-system, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+
+  const tempStep = tempRange <= 10 ? 1 : tempRange <= 30 ? 5 : 10;
+  const firstTemp = Math.ceil(minT / tempStep) * tempStep;
+  for (let t = firstTemp; t <= maxT; t += tempStep) {
+    const y = yPos(t);
+    ctx.strokeStyle = GRID_COLOR;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(plotL, y);
+    ctx.lineTo(plotR, y);
+    ctx.stroke();
+
+    ctx.fillStyle = LABEL_COLOR;
+    ctx.fillText(t + "°C", plotL - 8, y);
+  }
+
+  // Grid lines — time
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  const timeSpanMin = timeRange / 60000;
+  let timeStepMs;
+  if (timeSpanMin <= 5) timeStepMs = 60000;
+  else if (timeSpanMin <= 15) timeStepMs = 120000;
+  else if (timeSpanMin <= 30) timeStepMs = 300000;
+  else timeStepMs = 600000;
+
+  const firstTime = Math.ceil(tMin / timeStepMs) * timeStepMs;
+  for (let t = firstTime; t <= tMax; t += timeStepMs) {
+    const x = xPos(t);
+    if (x < plotL + 20 || x > plotR - 20) continue;
+    ctx.strokeStyle = GRID_COLOR;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, plotT);
+    ctx.lineTo(x, plotB);
+    ctx.stroke();
+
+    ctx.fillStyle = LABEL_COLOR;
+    ctx.fillText(formatTime(t), x, plotB + 8);
+  }
+
+  // Axes
+  ctx.strokeStyle = AXIS_COLOR;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(plotL, plotT);
+  ctx.lineTo(plotL, plotB);
+  ctx.lineTo(plotR, plotB);
   ctx.stroke();
+
+  if (history.length < 1) return;
+
+  // Line + fill
+  ctx.beginPath();
+  for (let i = 0; i < history.length; i++) {
+    const x = xPos(history[i].timestamp);
+    const y = yPos(history[i].temp);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+
+  ctx.strokeStyle = LINE_COLOR;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+
+  // Fill under the line
+  const grad = ctx.createLinearGradient(0, plotT, 0, plotB);
+  grad.addColorStop(0, FILL_TOP);
+  grad.addColorStop(1, FILL_BOT);
+
+  ctx.lineTo(xPos(history[history.length - 1].timestamp), plotB);
+  ctx.lineTo(xPos(history[0].timestamp), plotB);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
 }
 
 function tempClass(t) {
@@ -112,22 +259,43 @@ function tempClass(t) {
   return "hot";
 }
 
+function updateTemp(data) {
+  const t = parseFloat(data.temp);
+  tempEl.textContent = t.toFixed(1) + "°C";
+  tempEl.className = "live-temp " + tempClass(t);
+  dotEl.className = "dot online";
+  statusEl.textContent = "Live";
+  lastUpdate = Date.now();
+  if (data.mem_used != null && data.mem_total != null) {
+    memEl.textContent = `RAM: ${data.mem_used} / ${data.mem_total} MB`;
+  }
+}
+
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}?role=browser`);
 
   ws.onmessage = (e) => {
     const data = JSON.parse(e.data);
-    const t = parseFloat(data.temp);
-    tempEl.textContent = t.toFixed(1) + "°C";
-    tempEl.className = "temp " + tempClass(t);
-    dotEl.className = "dot online";
-    statusEl.textContent = "Live";
-    lastUpdate = Date.now();
 
-    history.push(t);
-    if (history.length > MAX_POINTS) history.shift();
-    drawChart();
+    if (data.type === "history") {
+      history.length = 0;
+      for (const p of data.data) {
+        history.push({ temp: parseFloat(p.temp), timestamp: p.timestamp });
+      }
+      if (history.length > 0) {
+        const last = history[history.length - 1];
+        updateTemp(last);
+      }
+      draw();
+      return;
+    }
+
+    const point = { temp: parseFloat(data.temp), timestamp: data.timestamp };
+    history.push(point);
+    if (history.length > 720) history.shift();
+    updateTemp(data);
+    draw();
   };
 
   ws.onclose = () => {
