@@ -60,7 +60,7 @@ wss.on("connection", (ws, req) => {
         // Individual reading
         const point = { temp: parsed.temp, timestamp: parsed.timestamp };
         history.push(point);
-        const msg = JSON.stringify(point);
+        const msg = JSON.stringify(parsed);
         for (const b of browsers) {
           if (b.readyState === 1) b.send(msg);
         }
