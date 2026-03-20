@@ -199,7 +199,7 @@
   </div>
 
   <div class="chart-card">
-    <div class="chart-title">Temperature Today</div>
+    <div class="chart-title">Temperature — Last 2 Hours</div>
     <div class="chart-wrap">
       <canvas id="chart"></canvas>
     </div>
@@ -278,30 +278,30 @@ function draw() {
 
   if (plotW <= 0 || plotH <= 0) return;
 
+  // Fixed 2-hour rolling window, scrolls with latest data
+  const WINDOW_MS = 2 * 60 * 60 * 1000;
+  let tMin, tMax;
+  if (history.length > 0) {
+    tMax = history[history.length - 1].timestamp;
+    tMin = tMax - WINDOW_MS;
+  } else {
+    const now = Date.now();
+    tMax = now;
+    tMin = now - WINDOW_MS;
+  }
+  const timeRange = tMax - tMin;
+
   let minT = Infinity, maxT = -Infinity;
   for (const p of history) {
+    if (p.timestamp < tMin) continue;
     if (p.temp < minT) minT = p.temp;
     if (p.temp > maxT) maxT = p.temp;
   }
-  if (history.length === 0) { minT = 30; maxT = 70; }
+  if (!isFinite(minT)) { minT = 30; maxT = 70; }
   const tempPad = Math.max((maxT - minT) * 0.15, 3);
   minT = Math.floor(minT - tempPad);
   maxT = Math.ceil(maxT + tempPad);
   const tempRange = maxT - minT || 1;
-
-  let tMin, tMax;
-  if (history.length > 1) {
-    tMin = history[0].timestamp;
-    tMax = history[history.length - 1].timestamp;
-  } else if (history.length === 1) {
-    tMin = history[0].timestamp - 60000;
-    tMax = history[0].timestamp + 60000;
-  } else {
-    const now = Date.now();
-    tMin = now - 300000;
-    tMax = now;
-  }
-  const timeRange = tMax - tMin || 1;
 
   function xPos(ts) { return plotL + ((ts - tMin) / timeRange) * plotW; }
   function yPos(temp) { return plotB - ((temp - minT) / tempRange) * plotH; }
@@ -329,12 +329,7 @@ function draw() {
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
 
-  const timeSpanMin = timeRange / 60000;
-  let timeStepMs;
-  if (timeSpanMin <= 5) timeStepMs = 60000;
-  else if (timeSpanMin <= 15) timeStepMs = 120000;
-  else if (timeSpanMin <= 30) timeStepMs = 300000;
-  else timeStepMs = 600000;
+  const timeStepMs = 15 * 60000; // label every 15 min
 
   const firstTime = Math.ceil(tMin / timeStepMs) * timeStepMs;
   for (let t = firstTime; t <= tMax; t += timeStepMs) {
@@ -359,13 +354,15 @@ function draw() {
   ctx.lineTo(plotR, plotB);
   ctx.stroke();
 
-  if (history.length < 1) return;
+  // Filter to visible points (within the 2h window)
+  const visible = history.filter(p => p.timestamp >= tMin);
+  if (visible.length < 1) return;
 
   // Line
   ctx.beginPath();
-  for (let i = 0; i < history.length; i++) {
-    const x = xPos(history[i].timestamp);
-    const y = yPos(history[i].temp);
+  for (let i = 0; i < visible.length; i++) {
+    const x = xPos(visible[i].timestamp);
+    const y = yPos(visible[i].temp);
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   }
   ctx.strokeStyle = LINE_COLOR;
@@ -377,8 +374,8 @@ function draw() {
   const grad = ctx.createLinearGradient(0, plotT, 0, plotB);
   grad.addColorStop(0, FILL_TOP);
   grad.addColorStop(1, FILL_BOT);
-  ctx.lineTo(xPos(history[history.length - 1].timestamp), plotB);
-  ctx.lineTo(xPos(history[0].timestamp), plotB);
+  ctx.lineTo(xPos(visible[visible.length - 1].timestamp), plotB);
+  ctx.lineTo(xPos(visible[0].timestamp), plotB);
   ctx.closePath();
   ctx.fillStyle = grad;
   ctx.fill();
