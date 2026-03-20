@@ -11,6 +11,7 @@ const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const history = [];
 const browsers = new Set();
 let piConnected = false;
+let piSocket = null;
 
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
@@ -33,6 +34,8 @@ wss.on("connection", (ws, req) => {
       return;
     }
     console.log("Pi connected");
+    if (piSocket && piSocket.readyState <= 1) piSocket.close();
+    piSocket = ws;
     piConnected = true;
     const statusMsg = JSON.stringify({ type: "status", piConnected: true });
     for (const b of browsers) {
@@ -67,7 +70,9 @@ wss.on("connection", (ws, req) => {
       } catch {}
     });
     ws.on("close", () => {
+      if (ws !== piSocket) return;
       console.log("Pi disconnected");
+      piSocket = null;
       piConnected = false;
       const statusMsg = JSON.stringify({ type: "status", piConnected: false });
       for (const b of browsers) {
